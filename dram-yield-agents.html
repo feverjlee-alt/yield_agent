@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DRAM WT Yield Agents</title>
+<meta name="description" content="DRAM Wafer Test 수율 분석 멀티 에이전트 플랫폼 — 현황·이상감지·원인·원류·리포트">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap">
+<style>
+:root{
+  --white:#fff; --paper:#fafafb; --ink:#0a0e1a; --navy:#0d1b3e; --navy-2:#16264f;
+  --blue:#2f5fff; --blue-soft:#eaf0ff; --silver:#e6e8ee; --gray:#6b7280; --gray-2:#9aa1ac;
+  --line:#ececf1; --surface:#fff; --bg:#fff; --text:#14181f; --text-soft:#5b616e;
+  --card:#fff; --card-line:#ededf2;
+  --good:#0e9f6e; --warn:#d97706; --bad:#dc2626;
+  --gold:#c6a15b;
+}
+:root:not([data-theme="light"]){
+  @media (prefers-color-scheme: dark){
+    --white:#0b0e16; --paper:#0b0e16; --ink:#f4f6fb; --navy:#e8ecf7; --navy-2:#1f2a4a;
+    --blue:#6a8bff; --blue-soft:#16203c; --silver:#1d2230; --gray:#9aa1ac; --gray-2:#9aa1ac;
+    --line:#1c2130; --surface:#0f1320; --bg:#080b12; --text:#e9ecf3; --text-soft:#a2a9b8;
+    --card:#0f1320; --card-line:#1e2434;
+  }
+}
+:root[data-theme="dark"]{
+  --white:#0b0e16; --paper:#0b0e16; --ink:#f4f6fb; --navy:#e8ecf7; --navy-2:#1f2a4a;
+  --blue:#6a8bff; --blue-soft:#16203c; --silver:#1d2230; --gray:#9aa1ac; --gray-2:#9aa1ac;
+  --line:#1c2130; --surface:#0f1320; --bg:#080b12; --text:#e9ecf3; --text-soft:#a2a9b8;
+  --card:#0f1320; --card-line:#1e2434;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  font-family:"Pretendard Variable",Pretendard,"Noto Sans KR","Inter",-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI",sans-serif;
+  letter-spacing:-.015em;line-height:1.72;transition:background .4s,color .4s;}
+a{color:inherit;text-decoration:none}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+/* --- Header --- */
+.nav{position:sticky;top:0;z-index:100;height:72px;display:flex;align-items:center;
+  background:color-mix(in srgb,var(--bg) 82%,transparent);
+  backdrop-filter:saturate(180%) blur(16px);
+  -webkit-backdrop-filter:saturate(180%) blur(16px);
+  border-bottom:1px solid transparent;transition:border-color .2s;}
+.nav.scrolled{border-bottom-color:var(--line)}
+.nav-inner{display:flex;width:100%;align-items:center;gap:20px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:900;letter-spacing:-.03em;font-size:17px}
+.brand .dot{width:10px;height:10px;border-radius:3px;background:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 20%,transparent)}
+.brand small{font-weight:600;color:var(--text-soft);font-size:12px;margin-left:4px}
+.nav-links{display:flex;gap:4px;margin-left:16px;flex:1;flex-wrap:wrap}
+.nav-link{padding:8px 14px;border-radius:999px;font-size:14px;font-weight:600;color:var(--text-soft);white-space:nowrap;transition:all .2s}
+.nav-link:hover{color:var(--text);background:var(--paper)}
+.nav-link.active{color:var(--white);background:var(--ink)}
+:root[data-theme="dark"] .nav-link.active{color:var(--bg)}
+.nav-right{display:flex;gap:10px;align-items:center}
+.theme-toggle{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;transition:transform .2s,border-color .2s}
+.theme-toggle:hover{transform:rotate(-12deg);border-color:var(--text)}
+
+/* --- Buttons --- */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:999px;font-weight:700;font-size:14.5px;transition:all .2s;border:1px solid transparent}
+.btn-primary{background:var(--ink);color:var(--bg)}
+.btn-primary:hover{background:var(--blue);color:#fff;transform:translateY(-1px)}
+.btn-ghost{border-color:var(--line);color:var(--text)}
+.btn-ghost:hover{border-color:var(--text);transform:translateY(-1px)}
+.btn-lg{padding:13px 26px;font-size:15.5px}
+
+/* --- Hero --- */
+.hero{position:relative;padding:48px 0 36px}
+.hero-in{position:relative;border-radius:30px;padding:54px 56px;overflow:hidden;color:#fff;
+  background:linear-gradient(150deg,#13234f,#0a1330);
+  box-shadow:0 36px 84px rgba(10,19,48,.30)}
+.hero-in::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);
+  background-size:40px 40px}
+.hero-in::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(680px 360px at 90% 0%,rgba(63,107,255,.38),transparent 62%)}
+.hero-in>*{position:relative;z-index:1}
+.eyebrow{font-size:13px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#9db4ff;margin-bottom:14px}
+.hero h1{font-size:clamp(28px,3.6vw,46px);font-weight:900;line-height:1.18;letter-spacing:-.04em;margin:0 0 18px}
+.hero h1 .accent{color:#7ea0ff}
+.hero p{color:#c3cfe8;max-width:720px;font-size:clamp(15px,1.25vw,17px);margin:0 0 28px}
+.hero-cta{display:flex;gap:12px;flex-wrap:wrap}
+.hero-cta .btn-primary{background:#fff;color:#0a1330}
+.hero-cta .btn-primary:hover{background:var(--blue);color:#fff}
+.hero-cta .btn-ghost{border-color:rgba(255,255,255,.32);color:#fff}
+.hero-cta .btn-ghost:hover{background:rgba(255,255,255,.08);border-color:#fff}
+
+/* --- Section --- */
+.sec{padding:72px 0}
+.sec-head{max-width:760px;margin-bottom:40px}
+.sec-head .eyebrow{color:var(--blue)}
+.sec h2{font-size:clamp(26px,3.4vw,40px);font-weight:900;line-height:1.14;letter-spacing:-.035em;margin:0 0 14px}
+.sec-head p{color:var(--text-soft);margin:0}
+
+/* --- Cards --- */
+.grid{display:grid;gap:20px}
+.g-5{grid-template-columns:repeat(5,1fr)}
+.g-4{grid-template-columns:repeat(4,1fr)}
+.g-3{grid-template-columns:repeat(3,1fr)}
+.g-2{grid-template-columns:repeat(2,1fr)}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:16px;padding:22px 22px;transition:border-color .25s,transform .25s,box-shadow .25s}
+.card.hoverable:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--blue) 30%,var(--card-line));box-shadow:0 20px 48px rgba(10,19,48,.08)}
+.card .tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;padding:4px 9px;border-radius:999px;background:var(--blue-soft);color:var(--blue);text-transform:uppercase}
+.card .tag.green{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)}
+.card .tag.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.card .tag.bad{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+.card .tag.gray{background:var(--paper);color:var(--text-soft)}
+.card h3{margin:12px 0 6px;font-size:19px;font-weight:800;letter-spacing:-.02em;line-height:1.3}
+.card p{margin:0;color:var(--text-soft);font-size:14.5px}
+
+/* --- KPI stat tile --- */
+.stat{display:flex;flex-direction:column;gap:4px}
+.stat .num{font-size:28px;font-weight:900;color:var(--ink);line-height:1;letter-spacing:-.03em}
+.stat .lab{font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.06em}
+.stat .delta{font-size:12.5px;font-weight:700;margin-top:4px}
+.stat .delta.up{color:var(--good)}
+.stat .delta.down{color:var(--bad)}
+
+/* --- Table --- */
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left}
+th{font-weight:800;color:var(--text-soft);font-size:12px;letter-spacing:.04em;text-transform:uppercase;background:var(--paper)}
+tr:hover td{background:color-mix(in srgb,var(--blue-soft) 40%,transparent)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.bin-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.03em}
+
+/* --- Pipeline (agents) --- */
+.pipeline{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;position:relative}
+.pipe{background:var(--card);border:1px solid var(--card-line);border-radius:14px;padding:18px 16px;position:relative;transition:border-color .25s,transform .25s}
+.pipe:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--blue) 30%,var(--card-line))}
+.pipe .pipe-idx{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--blue-soft);color:var(--blue);font-weight:900;font-size:14px;margin-bottom:10px}
+.pipe-t{font-size:15px;font-weight:800;letter-spacing:-.015em;color:var(--ink);margin-bottom:4px}
+.pipe-d{font-size:12.5px;color:var(--text-soft);line-height:1.55}
+.pipe-arrow{position:absolute;right:-11px;top:50%;transform:translateY(-50%);width:22px;height:22px;display:grid;place-items:center;color:var(--gray-2);z-index:1;background:var(--bg);border-radius:50%}
+.pipe:last-child .pipe-arrow{display:none}
+
+/* --- Chat / console look --- */
+.console{background:var(--card);border:1px solid var(--card-line);border-radius:18px;overflow:hidden}
+.console-head{padding:14px 18px;border-bottom:1px solid var(--card-line);display:flex;align-items:center;gap:10px;background:var(--paper)}
+.console-head .dots{display:flex;gap:5px}
+.console-head .dots i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.console-head .title{font-size:12.5px;font-weight:800;letter-spacing:.04em;color:var(--text-soft);text-transform:uppercase}
+.msg{padding:14px 18px;border-bottom:1px solid var(--line)}
+.msg:last-child{border-bottom:0}
+.msg .who{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--blue);margin-bottom:6px}
+.msg.user .who{color:var(--text-soft)}
+.msg .what{font-size:14.5px;color:var(--text)}
+.msg code{background:var(--paper);padding:1px 6px;border-radius:5px;font-size:13px}
+.tool-trace{margin-top:8px;background:var(--paper);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-soft);white-space:pre-wrap;overflow:auto;max-height:160px}
+
+/* --- Wafer map SVG --- */
+.wmap{aspect-ratio:1/1;width:100%;display:block}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.legend .k{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-soft)}
+.legend .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+/* --- Chart container (SVG) --- */
+.chart{width:100%;height:260px;display:block}
+.axis{stroke:var(--line);stroke-width:1}
+.tick{font-size:10px;fill:var(--text-soft)}
+.line-y{fill:none;stroke:var(--blue);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.area-y{fill:color-mix(in srgb,var(--blue) 18%,transparent);stroke:none}
+.dot-y{fill:var(--card);stroke:var(--blue);stroke-width:2}
+.bar{fill:var(--blue)}
+.bar.alt{fill:color-mix(in srgb,var(--blue) 55%,var(--card-line))}
+.gline{stroke:var(--line);stroke-dasharray:2 3;stroke-width:1}
+.lab{font-size:11px;fill:var(--text-soft);font-weight:600}
+
+/* --- Hypothesis cards --- */
+.hyp{border:1px solid var(--card-line);border-radius:14px;padding:16px 18px;background:var(--card);display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;margin-bottom:10px}
+.hyp .ttl{font-weight:800;font-size:15px;letter-spacing:-.015em;margin-bottom:4px}
+.hyp .ev{font-size:13px;color:var(--text-soft);margin-top:6px}
+.hyp .ev b{color:var(--text)}
+.hyp .score{text-align:right}
+.hyp .score .big{font-size:22px;font-weight:900;color:var(--blue);letter-spacing:-.02em}
+.hyp .score .lab{font-size:10.5px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.08em;font-weight:800}
+.meter{height:6px;background:var(--paper);border-radius:999px;overflow:hidden;margin-top:8px}
+.meter>span{display:block;height:100%;background:linear-gradient(90deg,var(--blue),color-mix(in srgb,var(--blue) 60%,#fff));border-radius:999px}
+
+/* --- Lineage --- */
+.lineage{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:12px}
+.step{background:var(--card);border:1px solid var(--card-line);border-radius:12px;padding:12px}
+.step .sh{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--text-soft);text-transform:uppercase}
+.step .sv{font-size:15px;font-weight:800;margin-top:4px}
+.step.hot{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 7%,var(--card))}
+.step.hot .sv{color:var(--bad)}
+
+/* --- Alert --- */
+.alert{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:14px 18px;border-radius:14px;border:1px solid var(--card-line);background:var(--card);margin-bottom:10px;transition:border-color .2s}
+.alert:hover{border-color:color-mix(in srgb,var(--blue) 30%,var(--card-line))}
+.alert .ic{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:900}
+.alert.bad .ic{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+.alert.warn .ic{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.alert.good .ic{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good)}
+.alert .ttl{font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+.alert .meta{font-size:12.5px;color:var(--text-soft);margin-top:2px}
+.alert .cta{color:var(--blue);font-weight:800;font-size:13px}
+
+/* --- Footer --- */
+footer{border-top:1px solid var(--line);margin-top:60px;padding:40px 0;color:var(--text-soft);font-size:13px}
+
+/* --- Page routing --- */
+.page{display:none}
+.page.active{display:block;animation:fadeUp .5s cubic-bezier(.22,.61,.36,1) both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+/* --- Reveal --- */
+.reveal{opacity:0;transform:translateY(16px);transition:opacity .6s cubic-bezier(.22,.61,.36,1),transform .6s cubic-bezier(.22,.61,.36,1)}
+.reveal.show{opacity:1;transform:none}
+
+/* --- Responsive --- */
+@media (max-width:1080px){
+  .g-5{grid-template-columns:repeat(3,1fr)}
+  .pipeline{grid-template-columns:repeat(3,1fr)}
+  .pipe:nth-child(3) .pipe-arrow{display:none}
+  .lineage{grid-template-columns:repeat(3,1fr)}
+}
+@media (max-width:860px){
+  .nav{height:auto;padding:10px 0}
+  .nav-inner{flex-wrap:wrap;gap:10px}
+  .nav-links{order:3;flex-basis:100%;margin:0;overflow-x:auto}
+  .g-4,.g-3,.g-2{grid-template-columns:1fr 1fr}
+  .pipeline,.g-5{grid-template-columns:1fr 1fr}
+  .pipe .pipe-arrow{display:none}
+  .hero-in{padding:40px 28px}
+  .sec{padding:52px 0}
+}
+@media (max-width:560px){
+  .g-4,.g-3,.g-2,.pipeline,.g-5{grid-template-columns:1fr}
+  .wrap{padding:0 20px}
+  .nav-link{font-size:13px;padding:7px 11px}
+}
+</style>
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <div class="brand"><span class="dot"></span>Yield<span style="color:var(--blue)">Agents</span><small>DRAM WT Platform</small></div>
+    <nav class="nav-links" id="navLinks">
+      <a class="nav-link" data-route="dashboard">Dashboard</a>
+      <a class="nav-link" data-route="status">① Yield Status</a>
+      <a class="nav-link" data-route="anomaly">② Anomaly</a>
+      <a class="nav-link" data-route="rootcause">③ Root Cause</a>
+      <a class="nav-link" data-route="traceback">④ Traceback</a>
+      <a class="nav-link" data-route="report">⑤ Report</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-toggle" id="themeBtn" aria-label="테마 전환" title="테마 전환">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============ DASHBOARD ============ -->
+<section class="page active" data-page="dashboard">
+  <div class="hero">
+    <div class="hero-in reveal">
+      <div class="eyebrow">DRAM Wafer Test · Multi-Agent Analysis</div>
+      <h1>엔지니어의 시간을<br><span class="accent">근거 있는 분석</span>으로 돌려드립니다.</h1>
+      <p>현황 집계 · 이상 감지 · 원인 가설 · 공정 원류 · 리포트까지 5개 전문 Agent가 Orchestrator 아래에서 협업합니다. 모든 수치는 결정론적 Tool로 계산되고, 모든 결론에는 근거가 붙습니다.</p>
+      <div class="hero-cta">
+        <a class="btn btn-lg btn-primary" data-route="status">현황 분석 시작</a>
+        <a class="btn btn-lg btn-ghost" data-route="report">최신 리포트 보기</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-head reveal">
+      <div class="eyebrow">Today · <span id="todayDate"></span></div>
+      <h2>오늘의 수율 현황</h2>
+      <p>최근 24시간 데이터 as-of <span id="asOf"></span>. 수치는 die-count 기반이며 Tool 호출로 산출됩니다.</p>
+    </div>
+
+    <div class="grid g-4 reveal" id="kpiGrid"></div>
+
+    <div style="margin-top:28px" class="grid g-2 reveal">
+      <div class="card">
+        <div class="tag">일별 수율 추이 (14일)</div>
+        <svg class="chart" id="dashTrend"></svg>
+      </div>
+      <div class="card">
+        <div class="tag">Bin Pareto (최근 7일)</div>
+        <svg class="chart" id="dashPareto"></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-head reveal">
+      <div class="eyebrow">Workflow</div>
+      <h2>Agent 연계 파이프라인</h2>
+      <p>Orchestrator가 사용자 의도와 이상 이벤트에 따라 전문 Agent를 호출합니다. 가설/근거는 Agent 간에 교환되고, 최종 판단은 엔지니어가 승인합니다.</p>
+    </div>
+    <div class="pipeline reveal">
+      <div class="pipe" data-route="status"><div class="pipe-idx">1</div><div class="pipe-t">Yield Status</div><div class="pipe-d">제품/Lot/Bin 집계, 트렌드, Pareto</div><div class="pipe-arrow">→</div></div>
+      <div class="pipe" data-route="anomaly"><div class="pipe-idx">2</div><div class="pipe-t">Anomaly Detection</div><div class="pipe-d">SPC/변화점/패턴 신규 발생 감지</div><div class="pipe-arrow">→</div></div>
+      <div class="pipe" data-route="rootcause"><div class="pipe-idx">3</div><div class="pipe-t">Root Cause</div><div class="pipe-d">Wafer map 패턴·Fail 시그니처·유사 사례</div><div class="pipe-arrow">→</div></div>
+      <div class="pipe" data-route="traceback"><div class="pipe-idx">4</div><div class="pipe-t">Process Traceback</div><div class="pipe-d">Step·Chamber·Recipe 공통점 검정</div><div class="pipe-arrow">→</div></div>
+      <div class="pipe" data-route="report"><div class="pipe-idx">5</div><div class="pipe-t">Report</div><div class="pipe-d">결과 조립, 근거 인용, 공유</div><div class="pipe-arrow">→</div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-head reveal">
+      <div class="eyebrow">Live alerts</div>
+      <h2>미처리 이상 이벤트</h2>
+    </div>
+    <div id="dashAlerts" class="reveal"></div>
+  </div>
+</section>
+
+<!-- ============ STATUS ============ -->
+<section class="page" data-page="status">
+  <div class="hero"><div class="hero-in reveal">
+    <div class="eyebrow">Agent ①</div>
+    <h1>Yield Status · <span class="accent">수율 현황 분석</span></h1>
+    <p>자연어로 묻고, 결정론적 SQL Tool이 답합니다. LLM은 계획과 해석만 하고, 숫자는 전부 Tool이 만듭니다. 모든 응답에 Tool trace와 데이터 as-of가 함께 표시됩니다.</p>
+  </div></div>
+
+  <div class="sec">
+    <div class="sec-head reveal"><div class="eyebrow">Chat</div><h2>엔지니어 질의</h2><p>예시 질문을 눌러 실제 Agent 응답(모의)과 Tool trace를 확인하세요.</p></div>
+
+    <div class="grid g-3 reveal" style="margin-bottom:16px">
+      <button class="card hoverable" data-ask="최근 14일 수율 현황 알려줘" style="text-align:left">
+        <div class="tag gray">예시 1</div><h3>최근 14일 수율 현황</h3><p>제품 전체 요약 + 일별 추이 + Bin Pareto</p>
+      </button>
+      <button class="card hoverable" data-ask="최근 7일 수율 하위 Lot top 5" style="text-align:left">
+        <div class="tag gray">예시 2</div><h3>수율 하위 Lot 5개</h3><p>Lot/Tester/Program 메타와 함께 랭킹</p>
+      </button>
+      <button class="card hoverable" data-ask="최근 2주 vs 이전 2주 수율 비교" style="text-align:left">
+        <div class="tag gray">예시 3</div><h3>기간 비교</h3><p>pp 단위 델타, 유의성 판단은 Agent ②로 넘김</p>
+      </button>
+    </div>
+
+    <div class="console reveal" id="statusConsole">
+      <div class="console-head"><div class="dots"><i></i><i></i><i></i></div><div class="title">Yield Status Agent · claude-sonnet-5-5</div></div>
+      <div id="statusMsgs"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ANOMALY ============ -->
+<section class="page" data-page="anomaly">
+  <div class="hero"><div class="hero-in reveal">
+    <div class="eyebrow">Agent ②</div>
+    <h1>Anomaly Detection · <span class="accent">이상 감지</span></h1>
+    <p>SPC·EWMA·변화점 탐지와 Wafer map 패턴 분류(지도/비지도)가 1차 감지를 수행합니다. Agent는 결과를 triage 하고, 오탐 후보(테스터·프로브카드 이슈)를 분리해 심각도 순으로 조사 워크플로를 제안합니다.</p>
+  </div></div>
+
+  <div class="sec">
+    <div class="sec-head reveal"><div class="eyebrow">Signals</div><h2>최근 7일 감지 결과</h2><p>심각도·영향 범위·시작 시점이 함께 표시됩니다. 알림을 클릭하면 Root Cause Agent로 넘어갑니다.</p></div>
+    <div id="anomList" class="reveal"></div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-head reveal"><div class="eyebrow">Signal engine</div><h2>SPC Chart — 일별 수율</h2><p>3σ 관리 한계와 CUSUM shift 포인트. 통계 계산은 Tool이, 해석은 Agent가 담당합니다.</p></div>
+    <div class="card reveal"><svg class="chart" id="spcChart" style="height:320px"></svg>
+      <div class="legend"><span class="k"><span class="sw" style="background:var(--blue)"></span>Yield</span><span class="k"><span class="sw" style="background:var(--warn)"></span>UCL / LCL</span><span class="k"><span class="sw" style="background:var(--bad)"></span>Out of control</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ROOT CAUSE ============ -->
+<section class="page" data-page="rootcause">
+  <div class="hero"><div class="hero-in reveal">
+    <div class="eyebrow">Agent ③</div>
+    <h1>Root Cause · <span class="accent">원인 분석</span></h1>
+    <p>Wafer map 패턴(Edge/Center/Scratch/Random), Fail bit 시그니처, 테스트 설비 이력, 과거 유사 사례(RAG)를 결합해 원인 가설을 신뢰도·근거와 함께 제시합니다. 상관≠인과 — 모든 가설은 검증 제안을 포함합니다.</p>
+  </div></div>
+
+  <div class="sec">
+    <div class="sec-head reveal"><div class="eyebrow">Case · <span id="rcCase">L261010-04</span></div><h2>Lot 조사 세션</h2><p>이상감지 Agent가 넘긴 Lot. 좌측은 Wafer map 샘플, 우측은 Agent의 가설 패널.</p></div>
+
+    <div class="grid g-2 reveal" style="align-items:start">
+      <div class="card">
+        <div class="tag">Wafer map · Lot <span id="rcLotLbl">L261010-04</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+          <div><svg class="wmap" id="wmap1"></svg><div style="text-align:center;font-size:12px;color:var(--text-soft);margin-top:4px">Wafer #1</div></div>
+          <div><svg class="wmap" id="wmap2"></svg><div style="text-align:center;font-size:12px;color:var(--text-soft);margin-top:4px">Wafer #7</div></div>
+        </div>
+        <div class="legend" id="binLegend"></div>
+        <div class="tool-trace" style="margin-top:12px" id="rcTrace"></div>
+      </div>
+
+      <div>
+        <div class="tag" style="margin-bottom:10px">가설 (신뢰도 순)</div>
+        <div id="hypList"></div>
+        <div class="card" style="margin-top:14px">
+          <div class="tag green">유사 과거 사례 (RAG)</div>
+          <table style="margin-top:10px">
+            <thead><tr><th>Case</th><th>패턴</th><th>확정 원인</th><th class="num">유사도</th></tr></thead>
+            <tbody>
+              <tr><td>C-2026-033</td><td>Edge ring</td><td>ETCH-CH05 pump drift</td><td class="num">0.91</td></tr>
+              <tr><td>C-2026-018</td><td>Edge ring</td><td>Wet clean recipe 변경 롤백</td><td class="num">0.78</td></tr>
+              <tr><td>C-2025-204</td><td>Edge thin</td><td>Chuck temp uniformity</td><td class="num">0.66</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TRACEBACK ============ -->
+<section class="page" data-page="traceback">
+  <div class="hero"><div class="hero-in reveal">
+    <div class="eyebrow">Agent ④</div>
+    <h1>Process Traceback · <span class="accent">공정 원류 분석</span></h1>
+    <p>이상 Lot이 거친 Step·Chamber·Recipe 이력을 재구성하고, 정상군과 통계적으로 비교해 공통점을 찾습니다. 효과 크기·p-value·표본 수를 함께 보고하며 교락 가능성을 명시합니다.</p>
+  </div></div>
+
+  <div class="sec">
+    <div class="sec-head reveal"><div class="eyebrow">Lineage</div><h2>Lot <span id="tbLotLbl">L261010-04</span>의 공정 경로</h2></div>
+    <div class="lineage reveal" id="lineage"></div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-head reveal"><div class="eyebrow">Chamber contrast</div><h2>Step·Chamber별 수율 비교</h2><p>ETCH Step에서 특정 Chamber의 수율이 유의하게 낮습니다. Welch's t-test · 교락 변수(제품/Tech) 보정 후.</p></div>
+    <div class="card reveal"><svg class="chart" id="tbBar" style="height:300px"></svg></div>
+    <div style="margin-top:14px" class="card reveal">
+      <table>
+        <thead><tr><th>Step</th><th>Chamber</th><th class="num">n</th><th class="num">Mean yield</th><th class="num">Δ vs peer</th><th class="num">p-value</th><th>판정</th></tr></thead>
+        <tbody id="tbTable"></tbody>
+      </table>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:10px 0 0">* 상관이지 인과가 아닙니다. Split 실험 또는 PM 이력 교차 검증을 제안합니다. (Agent 자동 생성)</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ REPORT ============ -->
+<section class="page" data-page="report">
+  <div class="hero"><div class="hero-in reveal">
+    <div class="eyebrow">Agent ⑤</div>
+    <h1>Report · <span class="accent">리포트</span></h1>
+    <p>하위 Agent의 결과를 템플릿에 조립해 리포트 초안을 생성합니다. 모든 수치에 Tool trace와 데이터 as-of가 붙고, 엔지니어 편집 후 공유됩니다.</p>
+  </div></div>
+
+  <div class="sec">
+    <div class="sec-head reveal"><div class="eyebrow">Draft</div><h2>일일 WT 수율 리포트 — DDR5-16Gb-A1</h2><p id="reportPeriod">기간: 자동 산출 · 데이터 as-of: 자동 산출</p></div>
+    <div class="grid g-2 reveal" style="grid-template-columns:1.3fr .7fr;gap:22px">
+      <div class="card">
+        <h3 style="margin-top:0">요약</h3>
+        <ul id="repSummary" style="padding-left:18px;margin:0;line-height:1.9"></ul>
+        <h3>1. 일별 수율 추이</h3>
+        <svg class="chart" id="repTrend"></svg>
+        <h3>2. Loss Pareto</h3>
+        <svg class="chart" id="repPareto"></svg>
+        <h3>3. 수율 하위 Lot</h3>
+        <table>
+          <thead><tr><th>Lot</th><th>Tester</th><th>Prog</th><th class="num">Yield</th><th class="num">Good / Total</th></tr></thead>
+          <tbody id="repLots"></tbody>
+        </table>
+        <h3>4. 조사 세션 요약</h3>
+        <p>Anomaly Agent가 L261010-04에서 Edge ring 패턴을 감지. Root Cause Agent는 <b>ETCH-CH05 pump drift</b>를 Top-1 가설로 제시 (신뢰도 0.72). Traceback Agent는 ETCH-CH05 수율이 peer 대비 <b>-1.84pp</b> (p&lt;0.001). <a data-route="rootcause" style="color:var(--blue);font-weight:800">조사 세션 열기 →</a></p>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="tag">Sources (Tool trace)</div>
+          <ul style="padding-left:18px;margin:10px 0 0;font-size:13px;color:var(--text-soft);line-height:1.8">
+            <li><code>yield_overview</code>(product, from, to)</li>
+            <li><code>bin_pareto</code>(product, from, to, top_n=6)</li>
+            <li><code>lot_ranking</code>(product, from, to, worst_n=5)</li>
+            <li><code>compare_period</code>(product, cur, prev)</li>
+            <li><code>wafer_bin_map</code>(lot, wafer)</li>
+          </ul>
+          <p style="font-size:12.5px;color:var(--text-soft);margin:12px 0 0">모든 수치는 결정론적 SQL Tool로 산출되며, 위 파라미터로 재실행 가능합니다.</p>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <div class="tag warn">엔지니어 승인 필요</div>
+          <p style="margin:10px 0 14px">이 리포트는 초안입니다. 공유 전 수치/문장을 검토하세요.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="alert('(모의) 리포트가 전사 공유 채널로 발송되었습니다.')">공유</button>
+            <button class="btn btn-ghost" onclick="alert('(모의) Markdown으로 저장되었습니다.')">Markdown 저장</button>
+            <button class="btn btn-ghost" onclick="alert('(모의) PPTX로 내보냈습니다.')">PPTX 내보내기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer><div class="wrap" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+  <div>© 2026 YieldAgents MVP · DRAM Wafer Test · 모의 데이터 기반 데모</div>
+  <div>Model: claude-sonnet-5-5 · PRD v0.1</div>
+</div></footer>
+
+<script>
+/* -------------------- Mock data (deterministic PRNG for repeatability) -------------------- */
+function mulberry32(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rand=mulberry32(20261011);
+
+const PRODUCT="DDR5-16Gb-A1";
+const BINS={1:["Good","#22c55e"],2:["Row/Col","#f59e0b"],3:["Bit","#06b6d4"],4:["Open/Short","#a855f7"],5:["Edge","#dc2626"],6:["Center","#ea580c"],7:["Scratch","#be185d"],8:["Other","#64748b"]};
+
+const DAYS=14;
+const today=new Date(2026,9,10);
+function fmtDate(d){return d.toISOString().slice(0,10)}
+const daily=[];
+for(let i=DAYS-1;i>=0;i--){
+  const d=new Date(today);d.setDate(today.getDate()-i);
+  let base=0.945+(rand()-0.5)*0.012;
+  if(i===3) base-=0.014; // excursion day
+  if(i===8) base-=0.006;
+  daily.push({day:fmtDate(d),yield:Math.max(0.8,Math.min(0.99,base))});
+}
+const paretoRows=[
+  {bin:5,fail:12840,name:"Edge"},
+  {bin:3,fail:7210,name:"Bit"},
+  {bin:2,fail:5460,name:"Row/Col"},
+  {bin:6,fail:3120,name:"Center"},
+  {bin:4,fail:2040,name:"Open/Short"},
+  {bin:8,fail:1180,name:"Other"},
+];
+const totalFail=paretoRows.reduce((a,b)=>a+b.fail,0);
+paretoRows.forEach(r=>r.share=r.fail/totalFail);
+
+const worstLots=[
+  {lot:"L261010-04",tester:"T03",prog:"RevC",y:0.892,good:26610,total:29850},
+  {lot:"L261010-11",tester:"T07",prog:"RevC",y:0.907,good:27075,total:29850},
+  {lot:"L261009-22",tester:"T03",prog:"RevC",y:0.914,good:27281,total:29850},
+  {lot:"L261010-18",tester:"T02",prog:"RevC",y:0.919,good:27432,total:29850},
+  {lot:"L261009-07",tester:"T05",prog:"RevB",y:0.923,good:27553,total:29850},
+];
+
+/* -------------------- KPI tiles -------------------- */
+function kpi(){
+  const g=document.getElementById("kpiGrid");
+  const latest=daily[daily.length-1].yield;
+  const prev=daily[daily.length-2].yield;
+  const delta=((latest-prev)*100).toFixed(2);
+  const avg=daily.reduce((s,x)=>s+x.yield,0)/daily.length;
+  const tiles=[
+    {lab:"오늘 수율",num:(latest*100).toFixed(2)+"%",d:delta,soft:"vs 어제"},
+    {lab:"14일 평균",num:(avg*100).toFixed(2)+"%",d:((avg-0.93)*100).toFixed(2),soft:"vs 목표 93.0%"},
+    {lab:"24h 검사 Lot",num:"28",d:"+3",soft:"vs 평균"},
+    {lab:"미처리 이상",num:"4",d:null,soft:"심각 1 · 보통 3"},
+  ];
+  g.innerHTML=tiles.map(t=>{
+    const d=t.d==null?"":`<div class="delta ${parseFloat(t.d)>=0?'up':'down'}">${parseFloat(t.d)>=0?'▲':'▼'} ${Math.abs(parseFloat(t.d)).toFixed(2)}${t.lab.includes('%')||t.soft.includes('목표')?'pp':''} · ${t.soft}</div>`;
+    return `<div class="card"><div class="lab" style="font-size:12px;font-weight:800;color:var(--text-soft);text-transform:uppercase;letter-spacing:.08em">${t.lab}</div><div class="num" style="font-size:30px;font-weight:900;color:var(--ink);margin-top:4px;letter-spacing:-.03em">${t.num}</div>${d||`<div class="delta" style="font-size:12.5px;color:var(--text-soft);font-weight:600;margin-top:4px">${t.soft}</div>`}</div>`;
+  }).join("");
+  document.getElementById("todayDate").textContent=fmtDate(today);
+  document.getElementById("asOf").textContent=fmtDate(today)+" 08:00";
+}
+
+/* -------------------- Trend line chart (SVG) -------------------- */
+function drawTrend(svg,data,{min=0.86,max=0.98}={}){
+  const W=svg.clientWidth||600,H=svg.clientHeight||260;
+  const P={l:40,r:14,t:16,b:28};
+  const iw=W-P.l-P.r,ih=H-P.t-P.b;
+  const y=v=>P.t+ih-(v-min)/(max-min)*ih;
+  const x=i=>P.l+(data.length===1?iw/2:i/(data.length-1)*iw);
+  const path=data.map((d,i)=>(i?'L':'M')+x(i)+' '+y(d.yield)).join(' ');
+  const area=path+` L${x(data.length-1)} ${P.t+ih} L${x(0)} ${P.t+ih} Z`;
+  const ticks=[min,(min+max)/2,max];
+  svg.innerHTML=`
+    <g>${ticks.map(t=>`<line class="gline" x1="${P.l}" x2="${W-P.r}" y1="${y(t)}" y2="${y(t)}"/><text class="tick" x="${P.l-6}" y="${y(t)+3}" text-anchor="end">${(t*100).toFixed(1)}%</text>`).join('')}</g>
+    <path class="area-y" d="${area}"/>
+    <path class="line-y" d="${path}"/>
+    ${data.map((d,i)=>`<circle class="dot-y" cx="${x(i)}" cy="${y(d.yield)}" r="3.5"><title>${d.day}: ${(d.yield*100).toFixed(2)}%</title></circle>`).join('')}
+    ${data.map((d,i)=>i%2===0?`<text class="tick" x="${x(i)}" y="${H-10}" text-anchor="middle">${d.day.slice(5)}</text>`:'').join('')}
+  `;
+}
+
+/* -------------------- Pareto bars (SVG) -------------------- */
+function drawPareto(svg,rows){
+  const W=svg.clientWidth||600,H=svg.clientHeight||260;
+  const P={l:36,r:14,t:16,b:60};
+  const iw=W-P.l-P.r,ih=H-P.t-P.b;
+  const max=rows[0].fail*1.1;
+  const bw=iw/rows.length*0.68;
+  const gap=iw/rows.length*0.32;
+  svg.innerHTML=rows.map((r,i)=>{
+    const h=r.fail/max*ih;
+    const xx=P.l+i*(bw+gap)+gap/2;
+    return `
+      <rect class="bar ${i>0?'alt':''}" x="${xx}" y="${P.t+ih-h}" width="${bw}" height="${h}" rx="4"><title>Bin ${r.bin} ${r.name}: ${r.fail.toLocaleString()} (${(r.share*100).toFixed(1)}%)</title></rect>
+      <text class="tick" x="${xx+bw/2}" y="${P.t+ih-h-6}" text-anchor="middle">${(r.share*100).toFixed(0)}%</text>
+      <text class="lab" x="${xx+bw/2}" y="${H-32}" text-anchor="middle">Bin ${r.bin}</text>
+      <text class="tick" x="${xx+bw/2}" y="${H-16}" text-anchor="middle">${r.name}</text>
+    `;
+  }).join('')+`<line class="axis" x1="${P.l}" x2="${W-P.r}" y1="${P.t+ih}" y2="${P.t+ih}"/>`;
+}
+
+/* -------------------- SPC chart (SVG) -------------------- */
+function drawSPC(svg){
+  const data=daily.slice();
+  const mean=data.reduce((s,x)=>s+x.yield,0)/data.length;
+  const sd=Math.sqrt(data.reduce((s,x)=>s+(x.yield-mean)**2,0)/data.length);
+  const UCL=mean+3*sd,LCL=mean-3*sd;
+  const W=svg.clientWidth||600,H=320;
+  const P={l:46,r:14,t:16,b:30};
+  const iw=W-P.l-P.r,ih=H-P.t-P.b;
+  const min=Math.min(LCL,data.reduce((m,d)=>Math.min(m,d.yield),1))-0.004;
+  const max=Math.max(UCL,data.reduce((m,d)=>Math.max(m,d.yield),0))+0.004;
+  const y=v=>P.t+ih-(v-min)/(max-min)*ih;
+  const x=i=>P.l+i/(data.length-1)*iw;
+  const path=data.map((d,i)=>(i?'L':'M')+x(i)+' '+y(d.yield)).join(' ');
+  svg.innerHTML=`
+    <line class="axis" x1="${P.l}" x2="${W-P.r}" y1="${y(mean)}" y2="${y(mean)}" style="stroke:var(--blue);stroke-dasharray:none;stroke-width:1.3"/>
+    <line x1="${P.l}" x2="${W-P.r}" y1="${y(UCL)}" y2="${y(UCL)}" style="stroke:var(--warn);stroke-dasharray:4 4;stroke-width:1.2"/>
+    <line x1="${P.l}" x2="${W-P.r}" y1="${y(LCL)}" y2="${y(LCL)}" style="stroke:var(--warn);stroke-dasharray:4 4;stroke-width:1.2"/>
+    <text class="tick" x="${W-P.r}" y="${y(UCL)-4}" text-anchor="end">UCL ${(UCL*100).toFixed(2)}%</text>
+    <text class="tick" x="${W-P.r}" y="${y(LCL)+12}" text-anchor="end">LCL ${(LCL*100).toFixed(2)}%</text>
+    <text class="tick" x="${P.l+4}" y="${y(mean)-4}">μ ${(mean*100).toFixed(2)}%</text>
+    <path class="line-y" d="${path}"/>
+    ${data.map((d,i)=>{
+      const oor=d.yield<LCL||d.yield>UCL;
+      return `<circle cx="${x(i)}" cy="${y(d.yield)}" r="${oor?5:3.5}" fill="${oor?'var(--bad)':'var(--card)'}" stroke="${oor?'var(--bad)':'var(--blue)'}" stroke-width="2"><title>${d.day}: ${(d.yield*100).toFixed(2)}%${oor?' (out of control)':''}</title></circle>`;
+    }).join('')}
+    ${data.map((d,i)=>i%2?'':`<text class="tick" x="${x(i)}" y="${H-10}" text-anchor="middle">${d.day.slice(5)}</text>`).join('')}
+  `;
+}
+
+/* -------------------- Wafer map (SVG, radial die layout) -------------------- */
+function wafer(svg,flavor){
+  const N=36,R=17;
+  const cells=[];
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const dx=c-(N-1)/2, dy=r-(N-1)/2, d=Math.hypot(dx,dy);
+    if(d>R) continue;
+    let bin=1;
+    const rr=rand();
+    if(flavor==="edge"){
+      if(d>R-2 && rr<0.75) bin=5;
+      else if(rr<0.01) bin=3;
+    } else if(flavor==="center"){
+      if(d<5 && rr<0.65) bin=6;
+      else if(d>R-1 && rr<0.1) bin=5;
+    } else {
+      if(d>R-0.6 && rr<0.1) bin=5;
+      else if(rr<0.006) bin=[2,3,4,8][Math.floor(rr*1000)%4];
+    }
+    cells.push({r,c,bin,d});
+  }
+  const W=svg.clientWidth||260;
+  const s=W/N;
+  svg.setAttribute("viewBox",`0 0 ${N*s} ${N*s}`);
+  svg.innerHTML=`<circle cx="${N*s/2}" cy="${N*s/2}" r="${(R+0.3)*s}" fill="var(--paper)" stroke="var(--line)"/>`+
+    cells.map(c=>`<rect x="${c.c*s+0.5}" y="${c.r*s+0.5}" width="${s-1}" height="${s-1}" fill="${BINS[c.bin][1]}" rx="1"><title>die(${c.r},${c.c}) bin ${c.bin}</title></rect>`).join('');
+}
+
+/* -------------------- Status Agent (mock LLM) -------------------- */
+const statusAnswers={
+  "최근 14일 수율 현황 알려줘":{
+    text:`<b>DDR5-16Gb-A1 · 최근 14일 수율</b> 평균 <b>${(daily.reduce((s,x)=>s+x.yield,0)/daily.length*100).toFixed(2)}%</b> (good ${(daily.reduce((s,x)=>s+x.yield,0)/daily.length*29850*28).toFixed(0)} / total 전체 die).
+    가장 낮은 날은 <code>${daily.reduce((m,x)=>x.yield<m.yield?x:m).day}</code>로 <b>${(daily.reduce((m,x)=>x.yield<m.yield?x:m).yield*100).toFixed(2)}%</b>. Edge Bin이 Loss의 42%를 차지합니다. 이상감지 Agent로 넘길까요?`,
+    trace:`→ tool: yield_overview(product="DDR5-16Gb-A1", date_from="${daily[0].day}", date_to="${daily[daily.length-1].day}")
+  ← summary: {days: 14, yield: 0.9382, lots: 395, total_die: 11,790,750}
+→ tool: bin_pareto(product="DDR5-16Gb-A1", date_from="…", date_to="…", top_n=6)
+  ← [{bin:5,"Edge",fail:12840,share:0.418}, …]
+as_of: ${fmtDate(today)}T08:00:00`,
+  },
+  "최근 7일 수율 하위 Lot top 5":{
+    text:`최근 7일 수율 하위 5개 Lot입니다. Tester <code>T03</code>이 2건 포함되어 있으나, Lot 간 Wafer map 패턴이 다르므로 테스트 설비 단일 원인으로 보기 어렵습니다. 상세 조사는 Root Cause Agent 권장.`,
+    trace:`→ tool: lot_ranking(product="DDR5-16Gb-A1", date_from, date_to, worst_n=5)
+  ← [${worstLots.map(l=>`"${l.lot}":${(l.y*100).toFixed(2)}%`).join(', ')}]
+as_of: ${fmtDate(today)}T08:00:00`,
+    extra:`<table style="margin-top:10px">
+      <thead><tr><th>Lot</th><th>Tester</th><th>Prog</th><th class="num">Yield</th><th class="num">Good / Total</th></tr></thead>
+      <tbody>${worstLots.map(l=>`<tr><td><b>${l.lot}</b></td><td>${l.tester}</td><td>${l.prog}</td><td class="num">${(l.y*100).toFixed(2)}%</td><td class="num">${l.good.toLocaleString()} / ${l.total.toLocaleString()}</td></tr>`).join('')}</tbody></table>`,
+  },
+  "최근 2주 vs 이전 2주 수율 비교":{
+    text:`이번 2주 수율 <b>93.82%</b> vs 이전 2주 <b>94.56%</b>, <b style="color:var(--bad)">-0.74pp</b>. 하락의 68%가 Edge Bin 증가에서 발생. 유의성 판정과 원인 가설은 Agent ②/③에 위임하세요.`,
+    trace:`→ tool: compare_period(product, this=["${daily[0].day}","${daily[daily.length-1].day}"], prev=["2026-09-12","2026-09-25"])
+  ← {current:{yield:0.9382}, previous:{yield:0.9456}, delta:-0.0074}`,
+  },
+};
+
+function statusAsk(q){
+  const box=document.getElementById("statusMsgs");
+  const a=statusAnswers[q];
+  const userMsg=`<div class="msg user"><div class="who">Engineer</div><div class="what">${q}</div></div>`;
+  const ans=a?`<div class="msg"><div class="who">Yield Status Agent</div><div class="what">${a.text}${a.extra||''}</div><div class="tool-trace">${a.trace}</div></div>`:
+    `<div class="msg"><div class="who">Yield Status Agent</div><div class="what">(예시 질문 외에는 모의 응답이 준비되어 있지 않습니다. 좌측 예시 카드를 이용하세요.)</div></div>`;
+  box.insertAdjacentHTML("beforeend",userMsg+ans);
+  box.scrollTop=box.scrollHeight;
+}
+
+/* -------------------- Anomaly list -------------------- */
+const anomalies=[
+  {sev:"bad",icon:"!",t:"L261010-04 수율 급락",m:`영향: 25 wafer · 시작: ${fmtDate(today)} 02:12 · 패턴: Edge ring (분류기 0.93) · 영향 die ~2,860`,next:"rootcause"},
+  {sev:"warn",icon:"⚠",t:"ETCH Step CUSUM shift 감지",m:"ETCH-CH05: 최근 36h 동안 μ -1.8σ shift. 통계적 변화점 2026-10-09 14:00",next:"traceback"},
+  {sev:"warn",icon:"⚠",t:"Row/Col Bin burst",m:"L261009-22 (Tester T03) : Row/Col Bin이 평상 대비 4.1× 증가. Probecard PC-07 교체 이력 확인 권장",next:"rootcause"},
+  {sev:"good",icon:"✓",t:"Scratch 알림 자동 종료",m:"L261008-15: wafer 1장 scratch (수작업 핸들링 원인 확정, 유사 사례 매칭)",next:null},
+];
+function drawAnomList(target){
+  const el=document.getElementById(target);
+  el.innerHTML=anomalies.map((a,i)=>`
+    <div class="alert ${a.sev}" data-i="${i}">
+      <div class="ic">${a.icon}</div>
+      <div><div class="ttl">${a.t}</div><div class="meta">${a.m}</div></div>
+      <div class="cta">${a.next?'조사 시작 →':'종료됨'}</div>
+    </div>`).join('');
+  el.querySelectorAll(".alert").forEach(n=>n.addEventListener("click",()=>{
+    const a=anomalies[+n.dataset.i];
+    if(a.next) navigate(a.next);
+  }));
+}
+
+/* -------------------- Root Cause hypotheses -------------------- */
+const hyps=[
+  {t:"ETCH Chamber drift (ETCH-CH05 pump)",conf:0.72,pros:["Wafer map Edge ring 패턴과 일치","ETCH-CH05 통과 wafer가 영향 wafer의 88% 차지","유사 사례 C-2026-033 (확정)과 패턴 유사도 0.91"],cons:["동일 Chamber 다른 Lot은 정상","FDC 센서 데이터 상관 중간(ρ=0.41)"]},
+  {t:"Wet clean recipe 변경 (RevB→RevC)",conf:0.41,pros:["프로그램 변경 시점(2026-10-01)과 Edge Bin 증가 추세 일치","유사 사례 C-2026-018"],cons:["Rev 변경 전 Lot에도 유사 패턴 일부 존재","영향 Lot이 Rev 변경 전후에 균일하게 분포"]},
+  {t:"Probecard PC-07 degradation (테스트 이슈)",conf:0.18,pros:["Tester T03 공통 (관측)"],cons:["Wafer map 패턴이 공정 유래(Edge ring)로 분류됨","PC 교체 이력 없음","재테스트 결과 Bin 변화 없음 → 공정 불량 확정"]},
+];
+function drawHyp(){
+  const el=document.getElementById("hypList");
+  el.innerHTML=hyps.map((h,i)=>`
+    <div class="hyp">
+      <div>
+        <div class="ttl">${i+1}. ${h.t}</div>
+        <div class="ev"><b>지지 근거</b><br>${h.pros.map(p=>'• '+p).join('<br>')}</div>
+        <div class="ev"><b>반대 근거</b><br>${h.cons.map(p=>'• '+p).join('<br>')}</div>
+        <div class="meter"><span style="width:${(h.conf*100).toFixed(0)}%"></span></div>
+      </div>
+      <div class="score"><div class="big">${(h.conf*100).toFixed(0)}%</div><div class="lab">confidence</div></div>
+    </div>`).join('');
+
+  const binLegend=document.getElementById("binLegend");
+  binLegend.innerHTML=Object.entries(BINS).map(([k,v])=>`<span class="k"><span class="sw" style="background:${v[1]}"></span>Bin ${k} ${v[0]}</span>`).join('');
+  document.getElementById("rcTrace").textContent=
+    `→ tool: wafer_bin_map(lot_id="L261010-04", wafer_id=1)
+  ← die: 1194 points
+→ tool: wafer_bin_map(lot_id="L261010-04", wafer_id=7)
+→ tool: classify_wafer_pattern(…) → "edge_ring" (confidence 0.93)
+→ tool: similar_cases(pattern="edge_ring", limit=3)
+  ← [C-2026-033, C-2026-018, C-2025-204]`;
+}
+
+/* -------------------- Traceback -------------------- */
+const steps=[
+  {name:"LITHO",ch:"LITHO-CH04",rec:"R1",hot:false},
+  {name:"ETCH",ch:"ETCH-CH05",rec:"R1",hot:true},
+  {name:"DEPO",ch:"DEPO-CH02",rec:"R2",hot:false},
+  {name:"CMP",ch:"CMP-CH01",rec:"R1",hot:false},
+  {name:"IMP",ch:"IMP-CH03",rec:"R1",hot:false},
+];
+function drawLineage(){
+  document.getElementById("lineage").innerHTML=steps.map(s=>`
+    <div class="step ${s.hot?'hot':''}">
+      <div class="sh">${s.name} ${s.hot?'· <span style="color:var(--bad)">의심</span>':''}</div>
+      <div class="sv">${s.ch}</div>
+      <div class="sh" style="margin-top:6px">Recipe ${s.rec}</div>
+    </div>`).join('');
+}
+
+const chambers=[
+  {step:"ETCH",ch:"CH01",n:812,y:0.9471,delta:0.0012,p:0.712},
+  {step:"ETCH",ch:"CH02",n:798,y:0.9469,delta:0.0010,p:0.804},
+  {step:"ETCH",ch:"CH03",n:803,y:0.9458,delta:-0.0001,p:0.961},
+  {step:"ETCH",ch:"CH04",n:824,y:0.9476,delta:0.0017,p:0.513},
+  {step:"ETCH",ch:"CH05",n:789,y:0.9275,delta:-0.0184,p:0.0004},
+  {step:"ETCH",ch:"CH06",n:821,y:0.9472,delta:0.0013,p:0.681},
+];
+function drawTB(){
+  const svg=document.getElementById("tbBar");
+  const W=svg.clientWidth||600,H=300;
+  const P={l:60,r:20,t:16,b:40};
+  const iw=W-P.l-P.r,ih=H-P.t-P.b;
+  const min=0.918,max=0.952;
+  const y=v=>P.t+ih-(v-min)/(max-min)*ih;
+  const bw=iw/chambers.length*0.68, gap=iw/chambers.length*0.32;
+  svg.innerHTML=chambers.map((c,i)=>{
+    const xx=P.l+i*(bw+gap)+gap/2;
+    const h=(c.y-min)/(max-min)*ih;
+    const hot=c.p<0.01;
+    return `
+      <rect x="${xx}" y="${P.t+ih-h}" width="${bw}" height="${h}" rx="4" fill="${hot?'var(--bad)':'var(--blue)'}" opacity="${hot?1:0.75}"><title>${c.step}-${c.ch}: ${(c.y*100).toFixed(2)}% (n=${c.n})</title></rect>
+      <text class="tick" x="${xx+bw/2}" y="${P.t+ih-h-6}" text-anchor="middle">${(c.y*100).toFixed(2)}%</text>
+      <text class="lab" x="${xx+bw/2}" y="${H-22}" text-anchor="middle">${c.step}-${c.ch}</text>
+      <text class="tick" x="${xx+bw/2}" y="${H-8}" text-anchor="middle">n=${c.n}</text>
+    `;
+  }).join('')+`
+    <line x1="${P.l}" x2="${W-P.r}" y1="${y(0.9465)}" y2="${y(0.9465)}" style="stroke:var(--text-soft);stroke-dasharray:4 4;stroke-width:1"/>
+    <text class="tick" x="${W-P.r}" y="${y(0.9465)-4}" text-anchor="end">peer mean 94.65%</text>
+  `;
+
+  document.getElementById("tbTable").innerHTML=chambers.map(c=>{
+    const sig=c.p<0.01;
+    return `<tr>
+      <td>${c.step}</td><td><b>${c.ch}</b></td>
+      <td class="num">${c.n}</td>
+      <td class="num">${(c.y*100).toFixed(2)}%</td>
+      <td class="num" style="color:${sig?'var(--bad)':'var(--text-soft)'}">${(c.delta*100).toFixed(2)}pp</td>
+      <td class="num">${c.p<0.001?'<0.001':c.p.toFixed(3)}</td>
+      <td>${sig?'<span class="bin-chip" style="background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)">의심</span>':'<span class="bin-chip" style="background:var(--paper);color:var(--text-soft)">정상</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* -------------------- Report -------------------- */
+function drawReport(){
+  document.getElementById("reportPeriod").textContent=`기간: ${daily[0].day} ~ ${daily[daily.length-1].day} · 데이터 as-of: ${fmtDate(today)} 08:00`;
+  const avg=daily.reduce((s,x)=>s+x.yield,0)/daily.length;
+  const cur=daily.slice(-7).reduce((s,x)=>s+x.yield,0)/7;
+  const prev=daily.slice(0,7).reduce((s,x)=>s+x.yield,0)/7;
+  const delta=(cur-prev)*100;
+  document.getElementById("repSummary").innerHTML=`
+    <li>기간 평균 수율 <b>${(avg*100).toFixed(2)}%</b> (14일, DDR5-16Gb-A1)</li>
+    <li>후반 7일 <b>${(cur*100).toFixed(2)}%</b> vs 전반 7일 <b>${(prev*100).toFixed(2)}%</b> → <b style="color:${delta<0?'var(--bad)':'var(--good)'}">${delta>=0?'+':''}${delta.toFixed(2)}pp</b></li>
+    <li>Loss 1위 Bin: <b>Edge (${(paretoRows[0].share*100).toFixed(1)}%)</b> · 2위: Bit (${(paretoRows[1].share*100).toFixed(1)}%)</li>
+    <li>Anomaly 1건 (L261010-04 Edge ring) → Root Cause Top-1: <b>ETCH-CH05 pump drift</b> (0.72)</li>
+    <li>Traceback: ETCH-CH05 수율 peer 대비 -1.84pp (p&lt;0.001, n=789)</li>
+  `;
+  document.getElementById("repLots").innerHTML=worstLots.map(l=>
+    `<tr><td><b>${l.lot}</b></td><td>${l.tester}</td><td>${l.prog}</td><td class="num">${(l.y*100).toFixed(2)}%</td><td class="num">${l.good.toLocaleString()} / ${l.total.toLocaleString()}</td></tr>`
+  ).join('');
+}
+
+/* -------------------- Routing -------------------- */
+function navigate(route){
+  document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.dataset.page===route));
+  document.querySelectorAll(".nav-link").forEach(n=>n.classList.toggle("active",n.dataset.route===route));
+  if(location.hash!=="#"+route) history.pushState({},"","#"+route);
+  window.scrollTo({top:0,behavior:"smooth"});
+  // (re)draw page-specific SVGs that depend on container width
+  requestAnimationFrame(()=>{
+    if(route==="dashboard"){ drawTrend(document.getElementById("dashTrend"),daily); drawPareto(document.getElementById("dashPareto"),paretoRows); drawAnomList("dashAlerts"); }
+    if(route==="anomaly"){ drawAnomList(document.getElementById("anomList")?"anomList":"anomList"); drawSPC(document.getElementById("spcChart")); }
+    if(route==="rootcause"){ wafer(document.getElementById("wmap1"),"edge"); wafer(document.getElementById("wmap2"),"edge"); drawHyp(); }
+    if(route==="traceback"){ drawLineage(); drawTB(); }
+    if(route==="report"){ drawTrend(document.getElementById("repTrend"),daily); drawPareto(document.getElementById("repPareto"),paretoRows); drawReport(); }
+    revealObserver();
+  });
+}
+document.addEventListener("click",e=>{
+  const a=e.target.closest("[data-route]");
+  if(a){ e.preventDefault(); navigate(a.dataset.route); }
+  const ask=e.target.closest("[data-ask]");
+  if(ask){ statusAsk(ask.dataset.ask); }
+});
+window.addEventListener("popstate",()=>navigate((location.hash||"#dashboard").slice(1)));
+
+/* -------------------- Theme toggle -------------------- */
+const themeBtn=document.getElementById("themeBtn");
+function applyTheme(t){document.documentElement.setAttribute("data-theme",t);try{localStorage.setItem("yat-theme",t)}catch{}}
+try{
+  const saved=localStorage.getItem("yat-theme");
+  if(saved) applyTheme(saved);
+  else if(matchMedia("(prefers-color-scheme: dark)").matches) applyTheme("dark");
+}catch{}
+themeBtn.addEventListener("click",()=>{
+  const cur=document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark";
+  applyTheme(cur);
+  // redraw current page SVGs so colors refresh via currentColor-less fills
+  const active=document.querySelector(".page.active").dataset.page;
+  navigate(active);
+});
+
+/* -------------------- Scroll nav border --------------- */
+addEventListener("scroll",()=>document.getElementById("nav").classList.toggle("scrolled",scrollY>8));
+
+/* -------------------- Reveal observer ----------------- */
+let io;
+function revealObserver(){
+  if(io) io.disconnect();
+  io=new IntersectionObserver((entries)=>{
+    entries.forEach(en=>{if(en.isIntersecting){en.target.classList.add("show");io.unobserve(en.target)}});
+  },{threshold:.12,rootMargin:"0px 0px -40px 0px"});
+  document.querySelectorAll(".page.active .reveal:not(.show)").forEach(n=>io.observe(n));
+  // immediate show for above-the-fold items
+  setTimeout(()=>document.querySelectorAll(".page.active .reveal").forEach(n=>{
+    const r=n.getBoundingClientRect(); if(r.top<innerHeight) n.classList.add("show");
+  }),50);
+}
+
+/* -------------------- Init -------------------- */
+kpi();
+const initial=(location.hash||"#dashboard").slice(1);
+navigate(initial);
+addEventListener("resize",()=>{
+  const active=document.querySelector(".page.active").dataset.page;
+  requestAnimationFrame(()=>navigate(active));
+});
+</script>
+</body>
+</html>
